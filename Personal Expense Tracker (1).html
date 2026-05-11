@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Carteira — Despesas Pessoais</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=DM+Mono:wght@300;400;500&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body, #root { min-height: 100%; }
+    body { background: #0e0e16; }
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-thumb { background: #2a2a3a; border-radius: 2px; }
+    input, select, button { outline: none; font-family: inherit; }
+    @keyframes fadeUp { from { opacity:0; transform:translateY(14px) } to { opacity:1; transform:translateY(0) } }
+    @keyframes spin   { to { transform: rotate(360deg) } }
+    .hc  { transition: transform .18s, box-shadow .18s; }
+    .hc:hover { transform: translateY(-2px); box-shadow: 0 8px 28px rgba(0,0,0,.4); }
+    .hb  { transition: all .15s; }
+    .hb:hover { opacity: .85; transform: translateY(-1px); }
+    .hr:hover { background: rgba(255,255,255,.035) !important; }
+    .hm:hover { color: #c9a84c !important; }
+    .hn:hover { color: #c9a84c !important; }
+    .hcat { transition: all .15s; }
+    .hcat:hover { opacity: .8; transform: scale(1.04); }
+    input[type=date]::-webkit-calendar-picker-indicator { filter: invert(.5); cursor: pointer; }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel">
+const { useState, useMemo, useEffect, useCallback } = React;
+
+const CATEGORIES = [
+  { id:"food",      label:"Alimentação", icon:"🍽️", color:"#f97316" },
+  { id:"transport", label:"Transporte",  icon:"🚗", color:"#3b82f6" },
+  { id:"housing",   label:"Habitação",   icon:"🏠", color:"#8b5cf6" },
+  { id:"health",    label:"Saúde",       icon:"💊", color:"#10b981" },
+  { id:"leisure",   label:"Lazer",       icon:"🎬", color:"#ec4899" },
+  { id:"shopping",  label:"Compras",     icon:"🛍️", color:"#f59e0b" },
+  { id:"education", label:"Educação",    icon:"📚", color:"#06b6d4" },
+  { id:"other",     label:"Outro",       icon:"📦", color:"#6b7280" },
+];
+const MONTHS = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"];
+const KEY = "carteira-v1";
+
+const fmt = (v) => new Intl.NumberFormat("pt-PT",{style:"currency",currency:"EUR"}).format(v);
+const getCat = (id) => CATEGORIES.find(c=>c.id===id) || CATEGORIES[CATEGORIES.length-1];
+
+function load() {
+  try { return JSON.parse(localStorage.getItem(KEY)) || []; }
+  catch { return []; }
+}
+function save(data) {
+  try { localStorage.setItem(KEY, JSON.stringify(data)); return true; }
+  catch { return false; }
+}
+
+function App() {
+  const now = new Date();
+  const [expenses, setExpenses]           = useState(load);
+  const [view, setView]                   = useState("dashboard");
+  const [filterMonth, setFilterMonth]     = useState(now.getMonth());
+  const [filterYear]                      = useState(now.getFullYear());
+  const [deleteConfirm, setDeleteConfirm] = useState(null);
+  const [saved, setSaved]                 = useState(false);
+  const [form, setForm] = useState({
+    desc:"", amount:"", category:"food",
+    date: now.toISOString().split("T")[0],
+  });
+
+  const updateExpenses = (next) => {
+    setExpenses(next);
+    const ok = save(next);
+    if (ok) { setSaved(true); setTimeout(() => setSaved(false), 2000); }
+  };
+
+  const filtered = useMemo(() =>
+    expenses.filter(e => {
+      const d = new Date(e.date);
+      return d.getMonth()===filterMonth && d.getFullYear()===filterYear;
+    }), [expenses, filterMonth, filterYear]);
+
+  const total = filtered.reduce((s,e)=>s+e.amount, 0);
+
+  const byCat = useMemo(() => {
+    const map = {};
+    filtered.forEach(e => { map[e.category]=(map[e.category]||0)+e.amount; });
+    return Object.entries(map).map(([id,t])=>({...getCat(id),total:t})).sort((a,b)=>b.total-a.total);
+  }, [filtered]);
+
+  const handleAdd = () => {
+    if (!form.desc.trim() || !form.amount || isNaN(parseFloat(form.amount))) return;
+    updateExpenses([
+      { id:Date.now(), desc:form.desc.trim(), amount:parseFloat(form.amount), category:form.category, date:form.date },
+      ...expenses
+    ]);
+    setForm({ desc:"", amount:"", category:"food", date:now.toISOString().split("T")[0] });
+    setView("list");
+  };
+
+  const handleDelete = (id) => { updateExpenses(expenses.filter(e=>e.id!==id)); setDeleteConfirm(null); };
+
+  const handleClear = () => {
+    if (window.confirm("Apagar TODOS os dados? Esta acção é irreversível.")) updateExpenses([]);
+  };
+
+  // ── Render ──────────────────────────────────────────────────────────────
+  const R = {
+    root:     { minHeight:"100vh", background:"#0e0e16", color:"#e8e4d9", fontFamily:"'DM Sans',sans-serif",
+                backgroundImage:"radial-gradient(ellipse at 20% 0%,rgba(201,168,76,.06) 0%,transparent 60%),radial-gradient(ellipse at 80% 100%,rgba(99,75,180,.06) 0%,transparent 60%)" },
+    h2:       { fontFamily:"'Playfair Display',serif", fontSize:20, color:"#e8e4d9", marginBottom:20, fontWeight:700 },
+    btnGold:  { background:"#c9a84c", border:"none", color:"#0e0e16", fontWeight:700, fontSize:14, padding:"14px 28px",
+                borderRadius:8, cursor:"pointer", letterSpacing:".02em" },
+    label:    { fontSize:11, color:"#555", letterSpacing:".1em", textTransform:"uppercase", fontFamily:"'DM Mono',monospace", display:"block", marginBottom:8 },
+    input:    { background:"rgba(255,255,255,.04)", border:"1px solid rgba(255,255,255,.1)", borderRadius:8,
+                padding:"12px 14px", color:"#e8e4d9", fontSize:15, width:"100%" },
+    empty:    { display:"flex", flexDirection:"column", alignItems:"center", gap:16, paddingTop:60, color:"#555", fontSize:15 },
+    btnDel:   { background:"rgba(239,68,68,.15)", border:"1px solid rgba(239,68,68,.3)", color:"#ef4444",
+                fontSize:11, padding:"3px 10px", borderRadius:4, cursor:"pointer", fontFamily:"'DM Mono',monospace" },
+    btnCancel:{ background:"rgba(255,255,255,.06)", border:"1px solid rgba(255,255,255,.1)", color:"#888",
+                fontSize:11, padding:"3px 10px", borderRadius:4, cursor:"pointer", fontFamily:"'DM Mono',monospace" },
+  };
+
+  return (
+    <div style={R.root}>
+      {/* Header */}
+      <header style={{ borderBottom:"1px solid rgba(255,255,255,.06)", padding:"24px 24px 20px" }}>
+        <div style={{ maxWidth:900, margin:"0 auto", display:"flex", justifyContent:"space-between", alignItems:"flex-start" }}>
+          <div>
+            <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:4 }}>
+              <span style={{ color:"#c9a84c", fontSize:22 }}>₿</span>
+              <span style={{ fontFamily:"'Playfair Display',serif", fontSize:22, letterSpacing:".02em" }}>Carteira</span>
+            </div>
+            <p style={{ fontSize:11, color:"#444", letterSpacing:".08em", textTransform:"uppercase", fontFamily:"'DM Mono',monospace" }}>
+              Controlo de despesas pessoais
+            </p>
+          </div>
+          <div style={{ display:"flex", flexDirection:"column", alignItems:"flex-end", gap:6 }}>
+            <div>
+              <span style={{ display:"block", fontSize:10, color:"#555", letterSpacing:".1em", textTransform:"uppercase", fontFamily:"'DM Mono',monospace", marginBottom:3 }}>
+                Este mês
+              </span>
+              <span style={{ display:"block", fontFamily:"'DM Mono',monospace", fontSize:26, fontWeight:500, color:"#c9a84c", letterSpacing:"-.02em" }}>
+                {fmt(total)}
+              </span>
+            </div>
+            <div style={{ fontSize:11, padding:"3px 10px", borderRadius:20, fontFamily:"'DM Mono',monospace",
+              border:"1px solid", transition:"opacity .4s", opacity: saved?1:0,
+              background:"rgba(16,185,129,.12)", borderColor:"rgba(16,185,129,.3)", color:"#34d399" }}>
+              ✓ Guardado
+            </div>
+          </div>
+        </div>
+      </header>
+
+      {/* Month bar */}
+      <div style={{ display:"flex", gap:4, padding:"12px 24px", borderBottom:"1px solid rgba(255,255,255,.05)", overflowX:"auto", maxWidth:900, margin:"0 auto" }}>
+        {MONTHS.map((m,i) => (
+          <button key={i} className="hm" onClick={() => setFilterMonth(i)}
+            style={{ background: filterMonth===i?"rgba(201,168,76,.1)":"none", border:"none", cursor:"pointer", borderRadius:4,
+              padding:"6px 10px", fontFamily:"'DM Mono',monospace", fontSize:12, letterSpacing:".05em", whiteSpace:"nowrap",
+              color: filterMonth===i?"#c9a84c":"#3a3a4a" }}>
+            {m}
+          </button>
+        ))}
+      </div>
+
+      {/* Nav */}
+      <nav style={{ display:"flex", gap:4, padding:"12px 24px 0", maxWidth:900, margin:"0 auto", borderBottom:"1px solid rgba(255,255,255,.05)" }}>
+        {[["dashboard","Resumo","◈"],["list","Despesas","≡"],["add","Adicionar","+"]].map(([v,label,icon]) => (
+          <button key={v} className="hn" onClick={() => setView(v)}
+            style={{ background:"none", border:"none", fontFamily:"'DM Sans',sans-serif", fontSize:13,
+              padding:"10px 16px", cursor:"pointer", display:"flex", alignItems:"center", gap:7, transition:"all .2s",
+              color: view===v?"#c9a84c":"#444", borderBottom: view===v?"2px solid #c9a84c":"2px solid transparent" }}>
+            <span style={{ fontSize:16 }}>{icon}</span>{label}
+          </button>
+        ))}
+      </nav>
+
+      {/* Main */}
+      <main style={{ maxWidth:900, margin:"0 auto", padding:"28px 24px 60px" }}>
+
+        {/* DASHBOARD */}
+        {view==="dashboard" && (
+          <div style={{ animation:"fadeUp .35s ease" }}>
+            {filtered.length===0 ? (
+              <div style={R.empty}>
+                <span style={{ fontSize:48 }}>📭</span>
+                <p>Sem despesas em {MONTHS[filterMonth]}.</p>
+                <button className="hb" onClick={() => setView("add")} style={R.btnGold}>Adicionar despesa</button>
+              </div>
+            ) : (
+              <>
+                <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:12, marginBottom:32 }}>
+                  {[
+                    { lbl:"Total gasto",   val:fmt(total),                                               sub:`${filtered.length} transações`, gold:true },
+                    { lbl:"Média / dia",   val:fmt(total/30) },
+                    { lbl:"Maior despesa", val:fmt(Math.max(...filtered.map(e=>e.amount))) },
+                  ].map(({lbl,val,sub,gold}) => (
+                    <div key={lbl} className="hc" style={{
+                      background: gold?"rgba(201,168,76,.06)":"rgba(255,255,255,.03)",
+                      border:`1px solid ${gold?"rgba(201,168,76,.2)":"rgba(255,255,255,.07)"}`,
+                      borderRadius:12, padding:"20px 18px", display:"flex", flexDirection:"column", gap:6 }}>
+                      <span style={{ fontFamily:"'DM Mono',monospace", fontSize:10, color:"#555", textTransform:"uppercase", letterSpacing:".1em" }}>{lbl}</span>
+                      <span style={{ fontFamily:"'DM Mono',monospace", fontSize:gold?24:20, fontWeight:500, color:gold?"#c9a84c":"#e8e4d9", letterSpacing:"-.02em" }}>{val}</span>
+                      {sub && <span style={{ fontSize:11, color:"#555" }}>{sub}</span>}
+                    </div>
+                  ))}
+                </div>
+
+                <h2 style={R.h2}>Por categoria</h2>
+                <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+                  {byCat.map(cat => {
+                    const pct = total>0?(cat.total/total)*100:0;
+                    return (
+                      <div key={cat.id} className="hc" style={{ display:"flex", alignItems:"center", justifyContent:"space-between",
+                        background:"rgba(255,255,255,.02)", border:"1px solid rgba(255,255,255,.05)", borderRadius:10, padding:"14px 16px", gap:16 }}>
+                        <div style={{ display:"flex", alignItems:"center", gap:12, minWidth:140 }}>
+                          <span style={{ width:38, height:38, borderRadius:10, display:"flex", alignItems:"center", justifyContent:"center",
+                            fontSize:18, flexShrink:0, background:cat.color+"22", color:cat.color }}>{cat.icon}</span>
+                          <div>
+                            <p style={{ fontSize:14, color:"#ccc", fontWeight:500 }}>{cat.label}</p>
+                            <p style={{ fontSize:11, color:"#555", fontFamily:"'DM Mono',monospace", marginTop:1 }}>{pct.toFixed(1)}% do total</p>
+                          </div>
+                        </div>
+                        <div style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"flex-end", gap:6 }}>
+                          <span style={{ fontFamily:"'DM Mono',monospace", fontSize:15, color:"#e8e4d9", fontWeight:500 }}>{fmt(cat.total)}</span>
+                          <div style={{ width:"100%", height:3, background:"rgba(255,255,255,.06)", borderRadius:2, overflow:"hidden" }}>
+                            <div style={{ height:"100%", borderRadius:2, transition:"width .6s ease", width:`${pct}%`, background:cat.color }} />
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
+        {/* LIST */}
+        {view==="list" && (
+          <div style={{ animation:"fadeUp .35s ease" }}>
+            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:20 }}>
+              <h2 style={{ ...R.h2, marginBottom:0 }}>Despesas — {MONTHS[filterMonth]} {filterYear}</h2>
+              {expenses.length>0 && (
+                <button onClick={handleClear} style={{ background:"none", border:"1px solid rgba(239,68,68,.25)", color:"#f87171",
+                  fontSize:11, padding:"5px 12px", borderRadius:6, cursor:"pointer", fontFamily:"'DM Mono',monospace", letterSpacing:".05em" }}>
+                  Limpar tudo
+                </button>
+              )}
+            </div>
+            {filtered.length===0 ? (
+              <div style={R.empty}>
+                <span style={{ fontSize:48 }}>🗒️</span>
+                <p>Nenhuma despesa em {MONTHS[filterMonth]}.</p>
+                <button className="hb" onClick={() => setView("add")} style={R.btnGold}>Adicionar</button>
+              </div>
+            ) : (
+              <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+                {[...filtered].sort((a,b)=>new Date(b.date)-new Date(a.date)).map(e => {
+                  const cat = getCat(e.category);
+                  return (
+                    <div key={e.id} className="hr" style={{ display:"flex", alignItems:"center", gap:14, padding:"14px 16px",
+                      background:"rgba(255,255,255,.02)", border:"1px solid rgba(255,255,255,.05)", borderRadius:10 }}>
+                      <span style={{ width:38, height:38, borderRadius:10, display:"flex", alignItems:"center", justifyContent:"center",
+                        fontSize:18, flexShrink:0, background:cat.color+"22", color:cat.color }}>{cat.icon}</span>
+                      <div style={{ flex:1, overflow:"hidden" }}>
+                        <p style={{ fontSize:14, color:"#d4d0c8", fontWeight:500, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{e.desc}</p>
+                        <p style={{ fontSize:11, color:"#555", marginTop:2, fontFamily:"'DM Mono',monospace" }}>
+                          {cat.label} · {new Date(e.date+"T12:00:00").toLocaleDateString("pt-PT")}
+                        </p>
+                      </div>
+                      <div style={{ display:"flex", flexDirection:"column", alignItems:"flex-end", gap:6, flexShrink:0 }}>
+                        <span style={{ fontFamily:"'DM Mono',monospace", fontSize:15, color:"#e8e4d9", fontWeight:500 }}>{fmt(e.amount)}</span>
+                        {deleteConfirm===e.id ? (
+                          <div style={{ display:"flex", gap:4 }}>
+                            <button onClick={() => handleDelete(e.id)} style={R.btnDel}>Sim</button>
+                            <button onClick={() => setDeleteConfirm(null)} style={R.btnCancel}>Não</button>
+                          </div>
+                        ) : (
+                          <button onClick={() => setDeleteConfirm(e.id)}
+                            style={{ background:"none", border:"none", color:"#333", cursor:"pointer", fontSize:13, padding:"2px 4px" }}>✕</button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ADD */}
+        {view==="add" && (
+          <div style={{ animation:"fadeUp .35s ease", maxWidth:480, margin:"0 auto" }}>
+            <h2 style={R.h2}>Nova Despesa</h2>
+            <div style={{ background:"rgba(255,255,255,.02)", border:"1px solid rgba(255,255,255,.07)", borderRadius:14, padding:"24px", display:"flex", flexDirection:"column", gap:14 }}>
+              {[
+                { lbl:"Descrição", type:"text",   ph:"Ex: Supermercado, Gasolina…", key:"desc" },
+                { lbl:"Valor (€)", type:"number", ph:"0.00",                        key:"amount" },
+                { lbl:"Data",      type:"date",   ph:"",                            key:"date" },
+              ].map(({lbl,type,ph,key}) => (
+                <div key={key}>
+                  <label style={R.label}>{lbl}</label>
+                  <input type={type} placeholder={ph} value={form[key]}
+                    onChange={e => setForm({...form,[key]:e.target.value})} style={R.input} />
+                </div>
+              ))}
+
+              <div>
+                <label style={R.label}>Categoria</label>
+                <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:8 }}>
+                  {CATEGORIES.map(cat => (
+                    <button key={cat.id} className="hcat" onClick={() => setForm({...form,category:cat.id})}
+                      style={{ display:"flex", flexDirection:"column", alignItems:"center", padding:"10px 6px", borderRadius:8, cursor:"pointer", gap:3,
+                        background: form.category===cat.id?cat.color+"33":"rgba(255,255,255,.04)",
+                        border:`1.5px solid ${form.category===cat.id?cat.color:"rgba(255,255,255,.08)"}`,
+                        color: form.category===cat.id?cat.color:"#888" }}>
+                      <span style={{ fontSize:18 }}>{cat.icon}</span>
+                      <span style={{ fontSize:10, marginTop:2 }}>{cat.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <button className="hb" onClick={handleAdd}
+                style={{ ...R.btnGold, width:"100%", marginTop:4, opacity:form.desc&&form.amount?1:.45 }}>
+                Registar Despesa
+              </button>
+            </div>
+          </div>
+        )}
+      </main>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>
